@@ -9,7 +9,7 @@
     "secret": "node -e \"console.log(require('crypto').randomBytes(32).toString('hex'))\""
   },
   "engines": {
-    "node": ">=20"
+    "node": "22.X"
   },
   "dependencies": {
     "better-sqlite3": "^11.10.0",
