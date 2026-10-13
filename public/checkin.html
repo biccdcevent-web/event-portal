@@ -62,7 +62,34 @@
   .result.bad h2 { color: var(--error); }
   .manual { margin-top: 1.25rem; }
   .foot { margin-top: 2rem; display: flex; justify-content: space-between; align-items: center; gap: 1rem; color: var(--muted); font-size: .88rem; }
+
+  /* ---------- name tag settings ---------- */
+  .printbar { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem 1rem; background: var(--surface); border: 1.5px solid var(--line); border-radius: 12px; padding: .75rem 1rem; margin-bottom: 1rem; font-size: .93rem; }
+  .printbar label { display: inline-flex; align-items: center; gap: .5rem; margin: 0; font-weight: 600; cursor: pointer; }
+  .printbar input[type=checkbox] { width: 20px; height: 20px; min-height: 0; accent-color: var(--cobalt); }
+  .printbar select { font: inherit; color: var(--ink); background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: .4rem .5rem; min-height: 40px; }
+  .printbar .btn { min-height: 40px; padding: .4rem .9rem; font-size: .9rem; }
+  .reprint { margin-top: .8rem; }
+  .reprint .btn { min-height: 40px; padding: .4rem 1rem; font-size: .92rem; }
+
+  /* ---------- the printed tag (only visible when printing) ---------- */
+  #tag { display: none; }
+  @media print {
+    html, body { background: #fff !important; margin: 0 !important; padding: 0 !important; }
+    :root { padding: 0 !important; }
+    main.wrap { display: none !important; }
+    #tag {
+      display: flex !important; flex-direction: column; justify-content: center; align-items: center; text-align: center;
+      width: var(--tag-w); height: var(--tag-h); padding: 6% 7%; box-sizing: border-box; overflow: hidden;
+      color: #000; font-family: var(--display); page-break-inside: avoid; break-inside: avoid;
+    }
+    #tag .t-ev { font: 600 calc(var(--tag-h) * .065)/1.15 var(--body); text-transform: uppercase; letter-spacing: .08em; padding-bottom: .5em; margin-bottom: .9em; border-bottom: 1.5px solid #000; max-width: 100%; }
+    #tag .t-nm { font-weight: 800; line-height: 1.02; letter-spacing: -0.01em; overflow-wrap: anywhere; }
+    #tag .t-ds { font: 600 calc(var(--tag-h) * .085)/1.2 var(--body); margin-top: .55em; overflow-wrap: anywhere; }
+    #tag .t-co { font: 400 calc(var(--tag-h) * .08)/1.2 var(--body); margin-top: .15em; overflow-wrap: anywhere; }
+  }
 </style>
+<style id="pageSize">@page { size: 4in 3in; margin: 0; } :root { --tag-w: 4in; --tag-h: 3in; }</style>
 </head>
 <body>
 <main class="wrap">
@@ -81,6 +108,17 @@
   </form>
 
   <section id="station" hidden>
+    <div class="printbar">
+      <label><input type="checkbox" id="autoPrint"> Print name tag on check-in</label>
+      <select id="tagSize" aria-label="Name tag size">
+        <option value="4in 3in">4 × 3 in badge</option>
+        <option value="4in 2in">4 × 2 in label</option>
+        <option value="3.5in 2.25in">3.5 × 2.25 in label</option>
+        <option value="90mm 55mm">90 × 55 mm card</option>
+        <option value="A6 landscape">A6 sheet</option>
+      </select>
+      <button class="btn btn-quiet" id="testPrint" type="button">Test print</button>
+    </div>
     <div id="reader">Starting camera…</div>
     <div class="result" id="result" aria-live="assertive">
       <h2>Ready to scan</h2>
@@ -88,9 +126,9 @@
     </div>
 
     <form class="manual" id="manualForm">
-      <label for="code">Or type the pass code from their email</label>
+      <label for="code">Or type the pass code from their email (or use a USB QR scanner here)</label>
       <div class="row">
-        <input id="code" autocomplete="off" autocapitalize="characters" placeholder="K7Q2-M9XD" maxlength="12">
+        <input id="code" autocomplete="off" autocapitalize="characters" placeholder="K7Q2-M9XD" maxlength="64">
         <button class="btn" type="submit">Check in</button>
       </div>
     </form>
@@ -102,6 +140,13 @@
   </section>
 </main>
 
+<div id="tag" aria-hidden="true">
+  <div class="t-ev" id="tEv"></div>
+  <div class="t-nm" id="tNm"></div>
+  <div class="t-ds" id="tDs"></div>
+  <div class="t-co" id="tCo"></div>
+</div>
+
 <script src="https://cdn.jsdelivr.net/npm/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <script>
 (() => {
@@ -110,6 +155,51 @@
   let scanner = null;
   let last = { text: '', at: 0 };
   let busy = false;
+  let eventName = '';
+
+  // ---------- name tags ----------
+  const store = {
+    get(k) { try { return localStorage.getItem(k); } catch { return null; } },
+    set(k, v) { try { localStorage.setItem(k, v); } catch {} },
+  };
+  const SIZES = { 'A6 landscape': ['148mm', '105mm'] };
+  function applySize(value) {
+    const [w, h] = SIZES[value] || value.split(' ');
+    $('pageSize').textContent = `@page { size: ${value}; margin: 0; } :root { --tag-w: ${w}; --tag-h: ${h}; }`;
+  }
+  $('autoPrint').checked = store.get('autoPrint') === '1';
+  const savedSize = store.get('tagSize');
+  if (savedSize && [...$('tagSize').options].some((o) => o.value === savedSize)) $('tagSize').value = savedSize;
+  applySize($('tagSize').value);
+  $('autoPrint').addEventListener('change', (e) => store.set('autoPrint', e.target.checked ? '1' : '0'));
+  $('tagSize').addEventListener('change', (e) => { store.set('tagSize', e.target.value); applySize(e.target.value); });
+
+  fetch('/api/event').then((r) => r.json()).then((ev) => { eventName = ev.name || ''; }).catch(() => {});
+
+  function printTag(a) {
+    $('tEv').textContent = eventName;
+    $('tEv').hidden = !eventName;
+    $('tNm').textContent = a.name;
+    $('tDs').textContent = a.designation;
+    $('tCo').textContent = a.company;
+    // Shrink long names so they stay on the tag.
+    const len = a.name.length;
+    const scale = len <= 14 ? .2 : len <= 20 ? .165 : len <= 28 ? .135 : len <= 40 ? .11 : .09;
+    $('tNm').style.fontSize = `calc(var(--tag-h) * ${scale})`;
+    setTimeout(() => window.print(), 50);
+  }
+  function addReprint(a) {
+    const wrap = document.createElement('div');
+    wrap.className = 'reprint';
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'btn btn-quiet';
+    b.textContent = 'Print name tag';
+    b.addEventListener('click', () => printTag(a));
+    wrap.appendChild(b);
+    $('result').appendChild(wrap);
+  }
+  $('testPrint').addEventListener('click', () => printTag({ name: 'Juan dela Cruz', designation: 'Operations Manager', company: 'Sample Company Inc.' }));
 
   function setCounts(c) {
     if (!c) return;
@@ -157,9 +247,12 @@
       const a = body.attendee;
       if (body.status === 'checked_in') {
         show('ok', `Welcome, ${a.name}`, [[`${a.designation}, ${a.company}`], [`Pass ${a.passCode}`, 'sub']]);
+        addReprint(a);
+        if ($('autoPrint').checked) printTag(a);
       } else if (body.status === 'already') {
         const t = new Date(body.checkedInAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' });
         show('warn', 'Already checked in', [[`${a.name}, ${a.company}`], [`This pass was used at ${t}. Check their ID before letting them in.`, 'sub']]);
+        addReprint(a);
       } else {
         show('bad', 'Not a valid pass', [[body.message || 'This code is not registered for this event.'], ['Ask the attendee to show the email they received, or register them again.', 'sub']]);
       }
