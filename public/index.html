@@ -1,0 +1,437 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Event registration</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,600;12..96,800&family=Instrument+Sans:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #E9EDF1; --surface: #FFFFFF; --ink: #16223A; --muted: #5B6678; --line: #C2CBD6;
+    --cobalt: #2D5BE3; --on-cobalt: #FFFFFF; --strap: #F2C230; --error: #B8322A; --ok: #1E7A4C;
+    --display: "Bricolage Grotesque", "Avenir Next", "Segoe UI", system-ui, sans-serif;
+    --body: "Instrument Sans", "Helvetica Neue", "Segoe UI", system-ui, sans-serif;
+    color-scheme: light;
+    box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px);
+    padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #111A2B; --surface: #1A2438; --ink: #E6EBF3; --muted: #9AA6BA; --line: #34425C;
+      --cobalt: #7894F7; --on-cobalt: #0E1626; --strap: #E3B526; --error: #F08A7E; --ok: #63C795;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #111A2B; --surface: #1A2438; --ink: #E6EBF3; --muted: #9AA6BA; --line: #34425C;
+    --cobalt: #7894F7; --on-cobalt: #0E1626; --strap: #E3B526; --error: #F08A7E; --ok: #63C795;
+    color-scheme: dark;
+  }
+  html { height: 100%; scroll-padding-top: env(safe-area-inset-top, 0px); }
+  *, *::before, *::after { box-sizing: inherit; }
+  [hidden] { display: none !important; }
+  body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 400 1rem/1.55 var(--body); -webkit-font-smoothing: antialiased; }
+  img { max-width: 100%; }
+  :focus-visible { outline: 3px solid var(--cobalt); outline-offset: 2px; }
+
+  .wrap {
+    max-width: 1120px; margin: 0 auto; padding: clamp(1.5rem, 4vw, 3.5rem) clamp(1.25rem, 4vw, 3rem) 4rem;
+    display: grid; grid-template-columns: minmax(0, 1fr) 320px; gap: clamp(2rem, 6vw, 5rem); align-items: start;
+  }
+
+  /* ---------- intro ---------- */
+  h1 { font: 800 clamp(2.3rem, 5.6vw, 3.9rem)/1 var(--display); letter-spacing: -0.025em; margin: 0 0 1rem; overflow-wrap: anywhere; }
+  .meta { margin: 0; color: var(--muted); font-size: 1.02rem; }
+  .meta span { display: block; }
+  .lede { max-width: 50ch; margin: 1.5rem 0 2.25rem; font-size: 1.05rem; }
+
+  .notice { background: var(--surface); border-left: 4px solid var(--strap); border-radius: 0 10px 10px 0; padding: .8rem 1rem; margin: 0 0 1.75rem; font-size: .93rem; max-width: 60ch; }
+  .notice.bad { border-left-color: var(--error); }
+
+  /* ---------- form ---------- */
+  form { display: grid; grid-template-columns: 1fr 1fr; gap: 1.15rem 1rem; max-width: 640px; }
+  .full { grid-column: 1 / -1; }
+  .field label { display: block; font-weight: 600; font-size: .93rem; margin-bottom: .35rem; }
+  .field input, .field textarea {
+    width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+    border: 1.5px solid var(--line); border-radius: 10px; padding: .72rem .85rem; min-height: 48px;
+    transition: border-color .15s;
+  }
+  .field textarea { resize: vertical; min-height: 84px; }
+  .field input:focus-visible, .field textarea:focus-visible { outline: 3px solid color-mix(in srgb, var(--cobalt) 35%, transparent); outline-offset: 0; border-color: var(--cobalt); }
+  .field.invalid input, .field.invalid textarea { border-color: var(--error); }
+  .err { color: var(--error); font-size: .86rem; margin: .3rem 0 0; }
+  .err:empty { display: none; }
+
+  .consent { display: flex; gap: .7rem; align-items: flex-start; font-size: .93rem; color: var(--muted); }
+  .consent input { width: 20px; height: 20px; margin: 2px 0 0; flex: none; accent-color: var(--cobalt); }
+  .consent label { cursor: pointer; }
+
+  .form-msg { grid-column: 1 / -1; margin: 0; padding: .8rem 1rem; border-radius: 10px; background: var(--surface); border: 1.5px solid var(--error); font-size: .95rem; }
+  .form-msg.info { border-color: var(--cobalt); }
+  .form-msg:empty { display: none; }
+
+  .btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: .5rem;
+    min-height: 50px; padding: .85rem 1.4rem; border-radius: 10px; border: 1.5px solid transparent;
+    font: 600 1rem var(--body); cursor: pointer; text-decoration: none;
+  }
+  .btn-primary { background: var(--cobalt); color: var(--on-cobalt); }
+  .btn-primary:hover { filter: brightness(1.07); }
+  .btn-primary:disabled { opacity: .6; cursor: progress; filter: none; }
+  .btn-quiet { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn-quiet:hover { border-color: var(--ink); }
+  .submit-row { grid-column: 1 / -1; display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; margin-top: .25rem; }
+  .submit-row small { color: var(--muted); }
+
+  /* ---------- done ---------- */
+  #done h2 { font: 800 clamp(1.9rem, 4vw, 2.6rem)/1.05 var(--display); letter-spacing: -0.02em; margin: 0 0 .9rem; }
+  #done h2:focus { outline: none; }
+  #done p { max-width: 52ch; margin: 0 0 1rem; }
+  #done .actions { display: flex; gap: .75rem; flex-wrap: wrap; margin-top: 1.75rem; }
+
+  /* ---------- the badge ---------- */
+  .badge-col { position: sticky; top: env(safe-area-inset-top, 0px); display: flex; flex-direction: column; align-items: center; perspective: 900px; }
+  .strap { width: 34px; height: 120px; background: var(--strap); overflow: hidden; display: flex; justify-content: center; }
+  .strap span { writing-mode: vertical-rl; font: 600 .74rem/1 var(--display); color: #3B2E00; white-space: nowrap; padding-top: 10px; letter-spacing: .02em; }
+  .clip { width: 24px; height: 28px; border: 4px solid #98A3B3; border-radius: 7px; margin-top: -6px; position: relative; z-index: 1; }
+  .card {
+    width: 100%; background: #FFFFFF; color: #16223A; border-radius: 16px; overflow: hidden; margin-top: -10px;
+    box-shadow: 0 1px 0 rgba(22, 34, 58, .05), 0 22px 44px -22px rgba(22, 34, 58, .55);
+    transform-origin: 50% 0;
+  }
+  .band { background: #2D5BE3; color: #FFFFFF; padding: 12px 20px 18px; }
+  .slot { width: 52px; height: 9px; border-radius: 5px; background: var(--bg); margin: 0 auto 14px; }
+  .band .ev { font: 600 1.02rem/1.2 var(--display); overflow-wrap: anywhere; }
+  .band .when { font-size: .8rem; opacity: .88; margin-top: 3px; }
+  .who { padding: 22px 20px 6px; }
+  .who .nm { font: 800 1.85rem/1.04 var(--display); letter-spacing: -0.015em; overflow-wrap: anywhere; min-height: 1.04em; }
+  .who .ds { margin-top: 10px; font-weight: 600; font-size: .98rem; overflow-wrap: anywhere; }
+  .who .co { color: #5B6678; font-size: .95rem; overflow-wrap: anywhere; }
+  .who .ghost { color: #AAB3C1; }
+  .pass { display: flex; align-items: flex-end; gap: 14px; padding: 16px 20px 22px; }
+  .qr { width: 132px; aspect-ratio: 1; flex: none; border: 1.5px dashed #C2CBD6; border-radius: 10px; display: grid; place-items: center; text-align: center; font-size: .74rem; line-height: 1.35; color: #7A8597; padding: 10px; }
+  .qr img { width: 100%; height: 100%; image-rendering: pixelated; display: block; }
+  .card.issued .qr { border: 0; padding: 0; }
+  .code { font: 600 .82rem/1.3 var(--body); color: #5B6678; padding-bottom: 4px; }
+  .code b { display: block; font: 800 1.15rem/1.2 var(--display); color: #16223A; letter-spacing: .04em; }
+
+  @media (max-width: 880px) {
+    .wrap { grid-template-columns: 1fr; }
+    .badge-col { position: static; order: -1; max-width: 300px; width: 100%; margin: 0 auto; }
+    .strap { height: 56px; }
+  }
+  @media (max-width: 560px) {
+    form { grid-template-columns: 1fr; }
+  }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+<main class="wrap">
+  <section>
+    <h1 id="evName">Event registration</h1>
+    <p class="meta"><span id="evDate"></span><span id="evVenue"></span></p>
+    <p class="lede">Register below and we'll email you a QR code. That code is your pass: show it at the registration desk when you arrive.</p>
+
+    <p class="notice" id="notice" hidden></p>
+
+    <form id="form" novalidate>
+      <div class="field full">
+        <label for="full_name">Full name</label>
+        <input id="full_name" name="full_name" autocomplete="name" maxlength="120" required>
+        <p class="err" id="full_name-err"></p>
+      </div>
+      <div class="field">
+        <label for="designation">Designation</label>
+        <input id="designation" name="designation" autocomplete="organization-title" maxlength="100" placeholder="e.g. Operations Manager" required>
+        <p class="err" id="designation-err"></p>
+      </div>
+      <div class="field">
+        <label for="company_name">Company name</label>
+        <input id="company_name" name="company_name" autocomplete="organization" maxlength="150" required>
+        <p class="err" id="company_name-err"></p>
+      </div>
+      <div class="field full">
+        <label for="company_address">Company address</label>
+        <textarea id="company_address" name="company_address" autocomplete="street-address" maxlength="300" rows="2" required></textarea>
+        <p class="err" id="company_address-err"></p>
+      </div>
+      <div class="field">
+        <label for="contact_number">Contact number</label>
+        <input id="contact_number" name="contact_number" type="tel" autocomplete="tel" inputmode="tel" maxlength="25" placeholder="+63 917 123 4567" required>
+        <p class="err" id="contact_number-err"></p>
+      </div>
+      <div class="field">
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" inputmode="email" maxlength="254" placeholder="Your pass is sent here" required>
+        <p class="err" id="email-err"></p>
+      </div>
+      <div class="full">
+        <div class="consent">
+          <input type="checkbox" id="consent" name="consent" required>
+          <label for="consent">I agree to let <span id="orgName">the organizer</span> use these details to manage my attendance at this event.</label>
+        </div>
+        <p class="err" id="consent-err"></p>
+      </div>
+      <p class="form-msg" id="formMsg" role="alert"></p>
+      <div class="submit-row">
+        <button class="btn btn-primary" id="submit" type="submit">Register and email my pass</button>
+      </div>
+    </form>
+
+    <section id="done" hidden>
+      <h2 tabindex="-1" id="doneTitle">You're registered</h2>
+      <p id="doneMsg"></p>
+      <p id="doneHint"></p>
+      <div class="actions">
+        <a class="btn btn-primary" id="download" download>Download QR pass</a>
+        <button class="btn btn-quiet" id="again" type="button">Register another person</button>
+      </div>
+    </section>
+  </section>
+
+  <aside class="badge-col" aria-label="Your event pass preview">
+    <div class="strap" aria-hidden="true"><span id="strapText">Event registration</span></div>
+    <div class="clip" aria-hidden="true"></div>
+    <div class="card" id="card">
+      <div class="band">
+        <div class="slot" aria-hidden="true"></div>
+        <div class="ev" id="bEvent">Event registration</div>
+        <div class="when" id="bWhen"></div>
+      </div>
+      <div class="who">
+        <div class="nm ghost" id="bName">Your name</div>
+        <div class="ds ghost" id="bDes">Designation</div>
+        <div class="co ghost" id="bCo">Company</div>
+      </div>
+      <div class="pass">
+        <div class="qr" id="bQr">Your QR pass appears here after you register</div>
+        <div class="code" id="bCode" hidden>Pass code<b id="bCodeVal"></b></div>
+      </div>
+    </div>
+  </aside>
+</main>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/qrcode-generator/1.4.4/qrcode.min.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const form = $('form');
+  const FIELDS = ['full_name', 'designation', 'company_name', 'company_address', 'contact_number', 'email'];
+  const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+  let mode = 'live';      // 'live' | 'demo' | 'offline'
+  let issued = false;
+
+  // ---------- event details ----------
+  function applyEvent(ev) {
+    const name = ev.name || 'Event registration';
+    document.title = `Register for ${name}`;
+    $('evName').textContent = name;
+    $('evDate').textContent = ev.date || '';
+    $('evVenue').textContent = ev.venue || '';
+    $('orgName').textContent = ev.organizer || name;
+    $('bEvent').textContent = name;
+    $('bWhen').textContent = ev.date || '';
+    $('strapText').textContent = Array(6).fill(name).join('\u2003\u2003');
+  }
+
+  function showNotice(text, bad) {
+    const n = $('notice');
+    n.textContent = text;
+    n.classList.toggle('bad', !!bad);
+    n.hidden = false;
+  }
+
+  async function loadEvent() {
+    try {
+      const r = await fetch('/api/event', { headers: { accept: 'application/json' } });
+      if (!r.ok) throw new Error(r.status);
+      applyEvent(await r.json());
+    } catch {
+      if (/claude/i.test(location.hostname)) {
+        mode = 'demo';
+        applyEvent({ name: 'Manila Tech Summit 2026', date: 'Thursday, 12 November 2026, 8:00 AM', venue: 'SMX Convention Center, Pasay City', organizer: 'Manila Tech Summit' });
+        showNotice('Preview mode: registrations here are not saved or emailed. On your own server, each registrant receives their QR pass by email.');
+      } else {
+        mode = 'offline';
+        showNotice('Registration is unavailable right now because the server could not be reached. Refresh the page in a minute.', true);
+        $('submit').disabled = true;
+      }
+    }
+  }
+
+  // ---------- live badge ----------
+  function setBadgeText(el, value, placeholder) {
+    el.textContent = value || placeholder;
+    el.classList.toggle('ghost', !value);
+  }
+  function syncBadge() {
+    if (issued) return;
+    setBadgeText($('bName'), form.full_name.value.trim(), 'Your name');
+    setBadgeText($('bDes'), form.designation.value.trim(), 'Designation');
+    setBadgeText($('bCo'), form.company_name.value.trim(), 'Company');
+  }
+  form.addEventListener('input', (e) => {
+    syncBadge();
+    const f = e.target.closest('.field');
+    if (f && f.classList.contains('invalid')) setError(e.target.name, '');
+    if (e.target.id === 'consent') setError('consent', '');
+  });
+
+  // ---------- validation (mirrors the server) ----------
+  function setError(name, msg) {
+    const err = $(`${name}-err`);
+    if (err) err.textContent = msg || '';
+    const input = form.elements[name];
+    if (input) {
+      input.setAttribute('aria-invalid', msg ? 'true' : 'false');
+      if (msg) input.setAttribute('aria-describedby', `${name}-err`); else input.removeAttribute('aria-describedby');
+      const f = input.closest('.field');
+      if (f) f.classList.toggle('invalid', !!msg);
+    }
+  }
+  function collect() {
+    const data = {};
+    FIELDS.forEach((k) => { data[k] = form.elements[k].value.trim(); });
+    data.consent = form.consent.checked;
+    return data;
+  }
+  function validate(d) {
+    const e = {};
+    const need = { full_name: 2, designation: 2, company_name: 2, company_address: 5 };
+    for (const [k, min] of Object.entries(need)) {
+      if (!d[k]) e[k] = 'This field is required.';
+      else if (d[k].length < min) e[k] = `Enter at least ${min} characters.`;
+    }
+    const digits = d.contact_number.replace(/\D/g, '').length;
+    if (!d.contact_number) e.contact_number = 'This field is required.';
+    else if (!/^\+?[\d\s\-().]+$/.test(d.contact_number) || digits < 7 || digits > 15) e.contact_number = 'Enter a valid phone number, like +63 917 123 4567.';
+    if (!d.email) e.email = 'This field is required.';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(d.email)) e.email = 'Enter a valid email address, like name@company.com.';
+    if (!d.consent) e.consent = 'Tick this box to register.';
+    return e;
+  }
+  function showErrors(errors) {
+    [...FIELDS, 'consent'].forEach((k) => setError(k, errors[k]));
+    const first = [...FIELDS, 'consent'].find((k) => errors[k]);
+    if (first) form.elements[first].focus();
+  }
+  function formMessage(text, kind) {
+    const m = $('formMsg');
+    m.textContent = text || '';
+    m.classList.toggle('info', kind === 'info');
+  }
+
+  // ---------- submit ----------
+  async function register(data) {
+    if (mode === 'demo') {
+      await new Promise((r) => setTimeout(r, 600));
+      const A = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+      const code = Array.from({ length: 8 }, () => A[Math.floor(Math.random() * A.length)]).join('');
+      const qr = qrcode(0, 'M');
+      qr.addData(`${code}.preview-only-pass`);
+      qr.make();
+      return { status: 201, body: { passCode: `${code.slice(0, 4)}-${code.slice(4)}`, fullName: data.full_name, email: data.email.toLowerCase(), emailSent: false, demo: true, qr: qr.createDataURL(6, 2) } };
+    }
+    const r = await fetch('/api/register', {
+      method: 'POST',
+      headers: { 'content-type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify(data),
+    });
+    let body = {};
+    try { body = await r.json(); } catch {}
+    return { status: r.status, body };
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    formMessage('');
+    const data = collect();
+    const errors = validate(data);
+    if (Object.keys(errors).length) return showErrors(errors);
+
+    const btn = $('submit');
+    btn.disabled = true;
+    btn.textContent = 'Registering…';
+    try {
+      const { status, body } = await register(data);
+      if (status === 201) return issuePass(body);
+      if (status === 422 && body.errors) return showErrors(body.errors);
+      if (status === 409) return formMessage(body.message || 'This email is already registered.', 'info');
+      formMessage(body.message || 'Registration failed. Check your connection and try again.');
+    } catch {
+      formMessage('Registration failed because the server could not be reached. Check your connection and try again.');
+    } finally {
+      btn.disabled = mode === 'offline';
+      btn.textContent = 'Register and email my pass';
+    }
+  });
+
+  // ---------- success ----------
+  function flip(card, swap) {
+    if (reduceMotion || !card.animate) { swap(); return; }
+    const half = { duration: 220, easing: 'ease-in', fill: 'forwards' };
+    card.animate([{ transform: 'rotateY(0deg)' }, { transform: 'rotateY(90deg)' }], half).onfinish = () => {
+      swap();
+      card.animate([{ transform: 'rotateY(-90deg)' }, { transform: 'rotateY(0deg)' }], { ...half, easing: 'ease-out' });
+    };
+  }
+
+  function issuePass(p) {
+    issued = true;
+    const card = $('card');
+    flip(card, () => {
+      card.classList.add('issued');
+      const img = new Image();
+      img.alt = `QR pass for ${p.fullName}`;
+      img.src = p.qr;
+      $('bQr').replaceChildren(img);
+      $('bCodeVal').textContent = p.passCode;
+      $('bCode').hidden = false;
+    });
+
+    const dl = $('download');
+    dl.href = p.qr;
+    dl.download = `event-pass-${p.passCode}.${p.qr.startsWith('data:image/gif') ? 'gif' : 'png'}`;
+
+    if (p.demo) {
+      $('doneMsg').textContent = `This is a preview, so nothing was sent. On your live portal, the pass goes to ${p.email}.`;
+      $('doneHint').textContent = '';
+    } else if (p.emailSent) {
+      $('doneMsg').textContent = `We've emailed your QR pass to ${p.email}. Show it at the registration desk when you arrive.`;
+      $('doneHint').textContent = "If it hasn't arrived within a few minutes, check your spam folder, or download the pass below.";
+    } else {
+      $('doneMsg').textContent = `Your registration is saved, but the email to ${p.email} couldn't be sent.`;
+      $('doneHint').textContent = 'Download your pass now and bring it on the day. Your pass code is ' + p.passCode + '.';
+    }
+
+    form.hidden = true;
+    $('done').hidden = false;
+    $('doneTitle').focus();
+  }
+
+  $('again').addEventListener('click', () => {
+    issued = false;
+    form.reset();
+    FIELDS.forEach((k) => setError(k, ''));
+    setError('consent', '');
+    formMessage('');
+    const card = $('card');
+    card.classList.remove('issued');
+    $('bQr').textContent = 'Your QR pass appears here after you register';
+    $('bCode').hidden = true;
+    syncBadge();
+    $('done').hidden = true;
+    form.hidden = false;
+    form.full_name.focus();
+  });
+
+  loadEvent();
+})();
+</script>
+</body>
+</html>
