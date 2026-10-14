@@ -73,13 +73,19 @@ const tokenFor = (code) => `${code}.${sign(code)}`;
 const pretty = (code) => `${code.slice(0, 4)}-${code.slice(4)}`;
 const sqlTimeToIso = (t) => (t ? t.replace(' ', 'T') + 'Z' : null);
 
+const swapCase = (s) => s.replace(/[a-z]/gi, (c) => (c === c.toLowerCase() ? c.toUpperCase() : c.toLowerCase()));
+
 function parseToken(raw) {
   const s = String(raw || '').trim();
-  const signed = s.match(/^([A-Z2-9]{8})\.([A-Za-z0-9_-]{16})$/);
-  if (signed) {
-    const ok = crypto.timingSafeEqual(Buffer.from(sign(signed[1])), Buffer.from(signed[2]));
-    return ok ? { code: signed[1] } : null;
+  // Barcode scanners with Caps Lock on (or a case-conversion setting) flip letter case,
+  // so also try the case-swapped version before giving up.
+  for (const candidate of [s, swapCase(s)]) {
+    const signed = candidate.match(/^([A-Z2-9]{8})\.([A-Za-z0-9_-]{16})$/);
+    if (signed && crypto.timingSafeEqual(Buffer.from(sign(signed[1])), Buffer.from(signed[2]))) {
+      return { code: signed[1] };
+    }
   }
+  if (/^[A-Za-z2-9]{8}\.[A-Za-z0-9_-]{16}$/.test(s)) return null; // a pass-shaped code with a bad signature
   // Typed-in code from the email (staff only), e.g. "K7Q2-M9XD"
   const typed = s.toUpperCase().replace(/[\s-]/g, '');
   return /^[A-Z2-9]{8}$/.test(typed) ? { code: typed } : null;
