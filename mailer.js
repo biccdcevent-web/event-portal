@@ -29,7 +29,7 @@ const esc = (s) =>
   String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 function buildHtml({ attendee, passCode, event }) {
-  const first = attendee.full_name.split(' ')[0];
+  const first = attendee.first_name || attendee.full_name.split(' ')[0];
   const font = "font-family:Arial,Helvetica,sans-serif;";
   const row = (label, value) =>
     `<tr><td style="${font}padding:6px 0;color:#5B6678;font-size:13px;width:110px;vertical-align:top">${label}</td>` +
@@ -63,7 +63,7 @@ function buildHtml({ attendee, passCode, event }) {
 
 function buildText({ attendee, passCode, event }) {
   return [
-    `Hi ${attendee.full_name.split(' ')[0]},`,
+    `Hi ${attendee.first_name || attendee.full_name.split(' ')[0]},`,
     '',
     `You're registered for ${event.name}.`,
     event.date ? `When: ${event.date}` : null,

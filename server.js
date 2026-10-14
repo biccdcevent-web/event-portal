@@ -51,12 +51,17 @@ db.exec(`
   );
 `);
 
+// Databases created before first/last name fields existed get the new columns added.
+const cols = db.prepare('PRAGMA table_info(registrations)').all().map((c) => c.name);
+if (!cols.includes('first_name')) db.exec('ALTER TABLE registrations ADD COLUMN first_name TEXT');
+if (!cols.includes('last_name')) db.exec('ALTER TABLE registrations ADD COLUMN last_name TEXT');
+
 const q = {
   byEmail: db.prepare('SELECT * FROM registrations WHERE email = ?'),
   byCode: db.prepare('SELECT * FROM registrations WHERE pass_code = ?'),
   insert: db.prepare(`INSERT INTO registrations
-      (pass_code, full_name, designation, company_name, company_address, contact_number, email)
-      VALUES (@pass_code, @full_name, @designation, @company_name, @company_address, @contact_number, @email)`),
+      (pass_code, first_name, last_name, full_name, designation, company_name, company_address, contact_number, email)
+      VALUES (@pass_code, @first_name, @last_name, @full_name, @designation, @company_name, @company_address, @contact_number, @email)`),
   markSent: db.prepare(`UPDATE registrations SET email_sent_at = datetime('now') WHERE id = ?`),
   checkIn: db.prepare(`UPDATE registrations SET checked_in_at = datetime('now') WHERE pass_code = ? AND checked_in_at IS NULL`),
   all: db.prepare('SELECT * FROM registrations ORDER BY id'),
@@ -105,11 +110,12 @@ async function sendPass(row, png) {
 
 // ---------------------------------------------------------------- validation
 const LIMITS = {
-  full_name: [2, 120],
+  first_name: [1, 60],
+  last_name: [1, 60],
   designation: [2, 100],
   company_name: [2, 150],
   company_address: [5, 300],
-  contact_number: [7, 25],
+  contact_number: [8, 10],
   email: [5, 254],
 };
 
@@ -130,12 +136,14 @@ function validate(body) {
     v.email = v.email.toLowerCase();
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/.test(v.email)) errors.email = 'Enter a valid email address, like name@company.com.';
   }
-  if (!errors.contact_number) {
-    const digits = v.contact_number.replace(/\D/g, '').length;
-    if (!/^\+?[\d\s\-().]+$/.test(v.contact_number) || digits < 7 || digits > 15) {
-      errors.contact_number = 'Enter a valid phone number, like +63 917 123 4567.';
-    }
-  }
+  // Contact number: the form fixes the +63 prefix; the attendee enters 8 to 10 digits.
+  const phone = (typeof body.contact_number === 'string' ? body.contact_number : '').replace(/[\s-]/g, '').replace(/^0+/, '');
+  delete errors.contact_number;
+  if (!phone) errors.contact_number = 'This field is required.';
+  else if (!/^\d+$/.test(phone)) errors.contact_number = 'Enter numbers only.';
+  else if (phone.length < 8 || phone.length > 10) errors.contact_number = 'Enter 8 to 10 digits after +63.';
+  else v.contact_number = `+63 ${phone}`;
+  v.full_name = `${v.first_name} ${v.last_name}`;
   if (body.consent !== true) errors.consent = 'Tick this box to register.';
   return { v, errors };
 }
@@ -241,6 +249,13 @@ app.post('/api/checkin', pinFailLimiter, checkinLimiter, (req, res) => {
 });
 
 // ---- organizer export
+// Registrations made before the form had separate name fields only have full_name.
+function splitName(r) {
+  if (r.first_name || r.last_name) return [r.first_name || '', r.last_name || ''];
+  const i = r.full_name.lastIndexOf(' ');
+  return i > 0 ? [r.full_name.slice(0, i), r.full_name.slice(i + 1)] : [r.full_name, ''];
+}
+
 app.get('/api/admin/registrations.csv', pinFailLimiter, (req, res) => {
   if (!secretMatches(req.get('x-admin-key') || req.query.key, ADMIN_KEY)) return res.status(401).send('Unauthorized');
 
@@ -249,12 +264,12 @@ app.get('/api/admin/registrations.csv', pinFailLimiter, (req, res) => {
     if (guardFormula && /^[=+\-@]/.test(s)) s = `'${s}`; // stop spreadsheet formula injection
     return `"${s.replace(/"/g, '""')}"`;
   };
-  const header = ['Pass code', 'Full name', 'Designation', 'Company', 'Company address', 'Contact number', 'Email',
+  const header = ['Pass code', 'First name', 'Last name', 'Designation', 'Company', 'Company address', 'Contact number', 'Email',
     'Registered (UTC)', 'Pass emailed (UTC)', 'Checked in (UTC)'];
   const lines = [header.map((h) => cell(h)).join(',')];
   for (const r of q.all.all()) {
     lines.push([
-      cell(pretty(r.pass_code)), cell(r.full_name), cell(r.designation), cell(r.company_name),
+      cell(pretty(r.pass_code)), ...splitName(r).map((n) => cell(n)), cell(r.designation), cell(r.company_name),
       cell(r.company_address), cell(r.contact_number, false), cell(r.email),
       cell(r.created_at), cell(r.email_sent_at), cell(r.checked_in_at),
     ].join(','));
