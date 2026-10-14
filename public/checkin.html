@@ -70,6 +70,16 @@
   .printbar select { font: inherit; color: var(--ink); background: var(--bg); border: 1.5px solid var(--line); border-radius: 8px; padding: .4rem .5rem; min-height: 40px; }
   .printbar .btn { min-height: 40px; padding: .4rem .9rem; font-size: .9rem; }
   .reprint { margin-top: .8rem; }
+  .modebar { display: flex; gap: .4rem; margin-bottom: 1rem; }
+  .modebar button { flex: 1; min-height: 44px; border-radius: 10px; border: 1.5px solid var(--line); background: transparent; color: var(--ink); font: 600 .95rem var(--body); cursor: pointer; }
+  .modebar button[aria-pressed="true"] { background: var(--cobalt); color: var(--on-cobalt); border-color: var(--cobalt); }
+  #scanZone { position: relative; border: 2.5px dashed var(--line); border-radius: 14px; padding: 1.4rem 1.25rem; background: var(--surface); cursor: text; }
+  #scanZone.ready { border-style: solid; border-color: var(--ok); }
+  #scanZone h2 { font: 800 1.35rem/1.15 var(--display); margin: 0 0 .2rem; }
+  #scanZone p { margin: 0; color: var(--muted); }
+  #scanZone .dot { display: inline-block; width: .7em; height: .7em; border-radius: 50%; background: var(--warn); margin-right: .45em; vertical-align: .05em; }
+  #scanZone.ready .dot { background: var(--ok); }
+  #scanInput { position: absolute; inset: 0; width: 100%; height: 100%; opacity: 0; border: 0; cursor: text; font-size: 16px; }
   .reprint .btn { min-height: 40px; padding: .4rem 1rem; font-size: .92rem; }
 
   /* ---------- the printed tag (only visible when printing) ---------- */
@@ -119,14 +129,23 @@
       </select>
       <button class="btn btn-quiet" id="testPrint" type="button">Test print</button>
     </div>
-    <div id="reader">Starting camera…</div>
+    <div class="modebar" role="group" aria-label="How to scan passes">
+      <button type="button" id="modeScanner" aria-pressed="true">Barcode scanner</button>
+      <button type="button" id="modeCamera" aria-pressed="false">Phone camera</button>
+    </div>
+    <div id="scanZone">
+      <h2 id="scanTitle"><span class="dot"></span><span id="scanState">Click here to start scanning</span></h2>
+      <p id="scanHint">Then scan the QR code on the attendee's phone or printout.</p>
+      <input id="scanInput" autocomplete="off" autocorrect="off" autocapitalize="off" spellcheck="false" inputmode="none" aria-label="Scanned pass">
+    </div>
+    <div id="reader" hidden>Starting camera…</div>
     <div class="result" id="result" aria-live="assertive">
       <h2>Ready to scan</h2>
-      <p class="sub">Hold the attendee's QR code inside the frame.</p>
+      <p class="sub">Scan the attendee's QR code.</p>
     </div>
 
     <form class="manual" id="manualForm">
-      <label for="code">Or type the pass code from their email (or use a USB QR scanner here)</label>
+      <label for="code">Or type the pass code from their email</label>
       <div class="row">
         <input id="code" autocomplete="off" autocapitalize="characters" placeholder="K7Q2-M9XD" maxlength="64">
         <button class="btn" type="submit">Check in</button>
@@ -134,7 +153,7 @@
     </form>
 
     <div class="foot">
-      <span>Camera access needs HTTPS (or localhost).</span>
+      <span id="footNote">Keep this window selected while scanning.</span>
       <button class="btn btn-quiet" id="lock" type="button">Lock station</button>
     </div>
   </section>
@@ -231,8 +250,9 @@
     return body;
   }
 
+  let queued = null;
   async function checkIn(token) {
-    if (busy) return;
+    if (busy) { queued = token; return; }
     busy = true;
     try {
       const r = await fetch('/api/checkin', {
@@ -260,10 +280,18 @@
       show('bad', 'No connection', [['The check-in server could not be reached. Try again.']]);
     } finally {
       busy = false;
+      refocus();
+      if (queued) { const next = queued; queued = null; checkIn(next); }
     }
   }
 
+  async function stopCamera() {
+    if (scanner) { try { await scanner.stop(); } catch {} scanner = null; }
+    $('reader').textContent = 'Starting camera…';
+  }
+
   async function startScanner() {
+    if (mode !== 'camera' || scanner) return;
     if (!window.Html5Qrcode) { $('reader').textContent = 'The scanner could not load. Use the pass code field below.'; return; }
     try {
       scanner = new Html5Qrcode('reader');
@@ -286,8 +314,7 @@
   async function lock() {
     pin = '';
     sessionStorage.removeItem('staffPin');
-    if (scanner) { try { await scanner.stop(); } catch {} scanner = null; }
-    $('reader').textContent = 'Starting camera…';
+    await stopCamera();
     $('station').hidden = true;
     $('pinForm').hidden = false;
     $('pin').value = '';
@@ -302,8 +329,68 @@
     $('pinErr').textContent = '';
     $('pinForm').hidden = true;
     $('station').hidden = false;
-    startScanner();
+    setMode(mode);
   }
+
+  // ---------- barcode scanner (works like a keyboard) ----------
+  let mode = store.get('scanMode') === 'camera' ? 'camera' : 'scanner';
+  const scanInput = $('scanInput');
+  const TOKEN = /^[A-Za-z2-9]{8}\.[A-Za-z0-9_-]{16}$/;
+  let autoTimer = null;
+  let lastScan = { text: '', at: 0 };
+
+  function setMode(m) {
+    mode = m;
+    store.set('scanMode', m);
+    $('modeScanner').setAttribute('aria-pressed', String(m === 'scanner'));
+    $('modeCamera').setAttribute('aria-pressed', String(m === 'camera'));
+    $('scanZone').hidden = m !== 'scanner';
+    $('reader').hidden = m !== 'camera';
+    $('footNote').textContent = m === 'scanner' ? 'Keep this window selected while scanning.' : 'Camera access needs HTTPS (or localhost).';
+    if (m === 'camera') startScanner(); else { stopCamera(); refocus(); }
+  }
+  $('modeScanner').addEventListener('click', () => setMode('scanner'));
+  $('modeCamera').addEventListener('click', () => setMode('camera'));
+
+  function refocus() {
+    if (mode !== 'scanner' || $('station').hidden) return;
+    const a = document.activeElement;
+    // Don't steal focus while staff are typing a code or changing a setting.
+    if (a && a !== scanInput && a !== document.body && a.matches('input, select, textarea')) return;
+    scanInput.focus({ preventScroll: true });
+  }
+  function setReady(ready) {
+    $('scanZone').classList.toggle('ready', ready);
+    $('scanState').textContent = ready ? 'Ready to scan' : 'Click here to start scanning';
+    $('scanHint').textContent = ready
+      ? "Scan the QR code on the attendee's phone or printout."
+      : 'Scanning is paused because this box is not selected.';
+  }
+  scanInput.addEventListener('focus', () => setReady(true));
+  scanInput.addEventListener('blur', () => { setReady(false); setTimeout(refocus, 150); });
+  $('scanZone').addEventListener('click', () => scanInput.focus());
+  window.addEventListener('afterprint', () => setTimeout(refocus, 50));
+  window.addEventListener('focus', () => setTimeout(refocus, 50));
+  document.addEventListener('click', (e) => { if (!e.target.closest('input, select, textarea, button, a, label')) refocus(); });
+
+  function submitScan() {
+    clearTimeout(autoTimer);
+    const text = scanInput.value.trim();
+    scanInput.value = '';
+    if (!text) return;
+    const now = Date.now();
+    if (text === lastScan.text && now - lastScan.at < 3000) return; // accidental double scan
+    lastScan = { text, at: now };
+    checkIn(text);
+  }
+  scanInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); submitScan(); }
+  });
+  // Some scanners don't send Enter at the end: submit once a complete pass has arrived.
+  scanInput.addEventListener('input', () => {
+    clearTimeout(autoTimer);
+    if (TOKEN.test(scanInput.value.trim())) autoTimer = setTimeout(submitScan, 120);
+  });
 
   $('pinForm').addEventListener('submit', async (e) => {
     e.preventDefault();
