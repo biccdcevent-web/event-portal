@@ -1,0 +1,573 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex">
+<title>Event dashboard</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;500;700;900&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg: #F2F2F2; --surface: #FFFFFF; --surface-2: #F5F5F5; --ink: #141414; --muted: #5C5C5C; --faint: #8C8C8C; --line: #D9D9D9; --grid: #EBEBEB;
+    --cobalt: #E00000; --on-cobalt: #FFFFFF; --series: #E00000; --track: #F8D0D0;
+    --cat-1: #2a78d6; --cat-2: #eb6834; --cat-3: #1baf7a; --cat-4: #eda100; --cat-5: #e87ba4; --cat-6: #008300; --cat-other: #5F6675; --stack-rest: #8C8C8C;
+    --ok: #1E7A4C; --ok-bg: #E2F3EA; --warn: #8A5A00; --warn-bg: #FBF0D6; --error: #B8322A;
+    --display: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    --body: "Roboto", "Helvetica Neue", Arial, sans-serif;
+    color-scheme: light; box-sizing: border-box;
+    padding-top: env(safe-area-inset-top, 0px); padding-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      --bg: #121212; --surface: #1C1C1E; --surface-2: #26262A; --ink: #EDEDED; --muted: #A6A6A6; --faint: #858585; --line: #3A3A3E; --grid: #2C2C30;
+      --cobalt: #FF5C5C; --on-cobalt: #141414; --series: #F24646; --track: #4A2326;
+      --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-other: #A9B2C4; --stack-rest: #9A9AA0;
+      --ok: #63C795; --ok-bg: #16352A; --warn: #E9B54A; --warn-bg: #3A2F14; --error: #F08A7E;
+      color-scheme: dark;
+    }
+  }
+  :root[data-theme="dark"] {
+    --bg: #121212; --surface: #1C1C1E; --surface-2: #26262A; --ink: #EDEDED; --muted: #A6A6A6; --faint: #858585; --line: #3A3A3E; --grid: #2C2C30;
+    --cobalt: #FF5C5C; --on-cobalt: #141414; --series: #F24646; --track: #4A2326;
+      --cat-1: #3987e5; --cat-2: #d95926; --cat-3: #199e70; --cat-4: #c98500; --cat-5: #d55181; --cat-6: #008300; --cat-other: #A9B2C4; --stack-rest: #9A9AA0;
+    --ok: #63C795; --ok-bg: #16352A; --warn: #E9B54A; --warn-bg: #3A2F14; --error: #F08A7E;
+    color-scheme: dark;
+  }
+  *, *::before, *::after { box-sizing: inherit; }
+  [hidden] { display: none !important; }
+  html { height: 100%; }
+  body { margin: 0; min-height: 100%; background: var(--bg); color: var(--ink); font: 400 15px/1.5 var(--body); -webkit-font-smoothing: antialiased; }
+  :focus-visible { outline: 3px solid var(--ink); outline-offset: 2px; }
+  .num { font-variant-numeric: tabular-nums; }
+  .powered { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--muted); }
+  .powered img { display: block; height: 24px; width: auto; }
+  .wrap > .powered { margin-top: 32px; justify-content: center; }
+  .login .powered { justify-content: center; margin-top: 6px; }
+
+  .btn { display: inline-flex; align-items: center; justify-content: center; gap: .45rem; min-height: 40px; padding: .5rem .95rem; border-radius: 10px; border: 1.5px solid transparent; font: 600 .92rem var(--body); cursor: pointer; text-decoration: none; white-space: nowrap; }
+  .btn-primary { background: var(--cobalt); color: var(--on-cobalt); }
+  .btn-quiet { background: transparent; color: var(--ink); border-color: var(--line); }
+  .btn-quiet:hover { border-color: var(--muted); }
+  .btn svg { width: 18px; height: 18px; }
+
+  /* ---------- sign in ---------- */
+  .login { min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+  .login form { width: min(400px, 100%); background: var(--surface); border-radius: 16px; padding: 32px; display: flex; flex-direction: column; gap: 14px; }
+  .login h1 { font: 800 1.7rem/1.1 var(--display); margin: 0; }
+  .login p { margin: 0; color: var(--muted); }
+  .login label { font-weight: 600; font-size: .92rem; }
+  .login input { width: 100%; font: inherit; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: .7rem .8rem; min-height: 46px; }
+  .err { color: var(--error); font-size: .9rem; margin: 0; }
+  .err:empty { display: none; }
+
+  /* ---------- dashboard ---------- */
+  .wrap { max-width: 1320px; margin: 0 auto; padding: 24px 16px 48px; }
+  @media (min-width: 720px) { .wrap { padding: 32px 28px 64px; } }
+  header.top { display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 16px; margin-bottom: 24px; }
+  header.top .kicker { margin: 0; color: var(--muted); font-weight: 600; font-size: .9rem; }
+  header.top h1 { margin: 2px 0 0; font: 800 clamp(1.5rem, 3vw, 2.1rem)/1.1 var(--display); letter-spacing: -.01em; }
+  .actions { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; }
+  .live { display: inline-flex; align-items: center; gap: .5rem; font-size: .88rem; color: var(--muted); margin-right: 6px; }
+  .live b { color: var(--ink); font-weight: 600; }
+  .live .dot { width: 10px; height: 10px; border-radius: 50%; background: var(--ok); box-shadow: 0 0 0 3px var(--ok-bg); }
+  .live.off .dot { background: var(--warn); box-shadow: 0 0 0 3px var(--warn-bg); }
+
+  .grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 16px; }
+  .card { background: var(--surface); border-radius: 16px; padding: 20px 22px; min-width: 0; }
+  .card h2 { margin: 0; font: 600 1.02rem/1.3 var(--body); }
+  .card .sub { margin: 2px 0 0; color: var(--muted); font-size: .88rem; }
+  .span-12 { grid-column: span 12; }
+  .span-7, .span-5 { grid-column: span 12; }
+  .span-6 { grid-column: span 12; }
+  @media (min-width: 1000px) { .span-7 { grid-column: span 7; } .span-5 { grid-column: span 5; } .span-6 { grid-column: span 6; } }
+
+  /* ---------- analysis ---------- */
+  .an-bar { grid-column: span 12; display: flex; flex-wrap: wrap; align-items: flex-end; justify-content: space-between; gap: 12px; margin-top: 16px; }
+  .an-bar h2 { margin: 0; font: 800 1.45rem/1.15 var(--display); }
+  .an-bar p { margin: 2px 0 0; color: var(--muted); }
+  .an-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .an-actions { display: flex; gap: 4px; flex: none; }
+  .icon-btn { width: 40px; height: 40px; display: grid; place-items: center; border-radius: 10px; border: 1.5px solid transparent; background: transparent; color: var(--muted); cursor: pointer; }
+  .icon-btn:hover { border-color: var(--line); color: var(--ink); }
+  .icon-btn:disabled { opacity: .4; cursor: default; }
+  .icon-btn svg { width: 19px; height: 19px; }
+  .an-more { margin: 6px 0 0; color: var(--muted); font-size: .85rem; }
+  .an-more:empty { display: none; }
+  #anBuilder { grid-column: span 12; }
+  .builder { display: grid; grid-template-columns: minmax(0, 1fr); gap: 20px; }
+  @media (min-width: 1000px) { .builder { grid-template-columns: 360px minmax(0, 1fr); gap: 32px; } }
+  .builder form { display: flex; flex-direction: column; gap: 14px; }
+  .builder label, .builder .lbl { display: block; font-weight: 600; font-size: .9rem; margin-bottom: 5px; }
+  .builder select, .builder input[type=text] { width: 100%; font: inherit; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: .55rem .7rem; min-height: 44px; }
+  .builder select:disabled { opacity: .7; }
+  .types { display: flex; flex-wrap: wrap; gap: 8px; }
+  .type-btn { display: inline-flex; align-items: center; gap: .4rem; min-height: 42px; padding: .45rem .8rem; border-radius: 10px; border: 1.5px solid var(--line); background: transparent; color: var(--ink); font: 600 .9rem var(--body); cursor: pointer; }
+  .type-btn svg { width: 18px; height: 18px; }
+  .type-btn[aria-pressed="true"] { background: var(--cobalt); border-color: var(--cobalt); color: var(--on-cobalt); }
+  .hint { color: var(--muted); font-size: .85rem; margin: 6px 0 0; }
+  .hint:empty { display: none; }
+  .builder .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .preview-box { background: var(--surface-2); border-radius: 12px; padding: 16px; min-width: 0; }
+  .preview-box .lbl { color: var(--muted); }
+  .preview-box .chart { margin-top: 6px; }
+
+  .hero { display: flex; flex-direction: column; gap: 14px; }
+  .hero .label { font-weight: 600; color: var(--muted); }
+  .hero .big { font: 600 clamp(3.2rem, 7vw, 4.6rem)/1 var(--body); letter-spacing: -.02em; }
+  .hero .of { color: var(--muted); font-size: 1.05rem; }
+  .hero .of b { color: var(--ink); }
+  .meter { height: 14px; background: var(--track); border-radius: 999px; overflow: hidden; }
+  .meter span { display: block; height: 100%; background: var(--series); border-radius: 999px; transition: width .6s ease; }
+  .tiles { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+  .tile { background: var(--surface); border-radius: 16px; padding: 18px 20px; display: flex; flex-direction: column; gap: 6px; }
+  .tile .label { color: var(--muted); font-weight: 600; font-size: .92rem; }
+  .tile .value { font: 600 2.1rem/1.1 var(--body); }
+  .tile .note { color: var(--muted); font-size: .86rem; display: flex; align-items: center; gap: .35rem; }
+  .tile.warn .note { color: var(--warn); font-weight: 600; }
+  .tile .note svg { width: 16px; height: 16px; flex: none; }
+
+  .chart { position: relative; margin-top: 14px; }
+  .chart svg { display: block; width: 100%; overflow: visible; }
+  .chart .axis { fill: var(--muted); font: 12px var(--body); font-variant-numeric: tabular-nums; }
+  .chart .gridline { stroke: var(--grid); stroke-width: 1; shape-rendering: crispEdges; }
+  .chart .baseline { stroke: var(--line); stroke-width: 1; shape-rendering: crispEdges; }
+  .chart .bar { fill: var(--series); }
+  .chart .hit { fill: transparent; cursor: default; }
+  .chart .hit:hover + .bar, .chart .bar.on { opacity: .82; }
+  .chart .peak { fill: var(--ink); font: 600 12px var(--body); font-variant-numeric: tabular-nums; }
+  .empty { margin: 14px 0 0; padding: 32px 16px; text-align: center; color: var(--muted); background: var(--surface-2); border-radius: 12px; }
+  .tip { position: absolute; pointer-events: none; background: var(--ink); color: var(--surface); font-size: .84rem; line-height: 1.35; padding: 7px 10px; border-radius: 8px; white-space: nowrap; transform: translate(-50%, calc(-100% - 10px)); z-index: 2; }
+  .tip b { font-weight: 600; }
+  details.data { margin-top: 10px; font-size: .88rem; }
+  details.data summary { cursor: pointer; color: var(--muted); }
+  details.data table { margin-top: 8px; border-collapse: collapse; width: 100%; max-width: 420px; }
+  details.data td, details.data th { text-align: left; padding: 4px 8px; border-bottom: 1px solid var(--grid); }
+  details.data td:last-child, details.data th:last-child { text-align: right; }
+
+  .bars { list-style: none; margin: 16px 0 0; padding: 0; display: flex; flex-direction: column; gap: 12px; }
+  .bars li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 4px 12px; align-items: center; }
+  .bars .name { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bars .count { color: var(--muted); font-size: .88rem; text-align: right; }
+  .bars .track { grid-column: 1 / -1; height: 12px; }
+  .bars .fill { height: 12px; background: var(--series); border-radius: 0 4px 4px 0; min-width: 4px; }
+
+  .feed { list-style: none; margin: 12px 0 0; padding: 0; }
+  .feed li { display: grid; grid-template-columns: 32px minmax(0, 1fr) auto; gap: 10px; align-items: center; padding: 10px 0; border-bottom: 1px solid var(--grid); }
+  .feed li:last-child { border-bottom: 0; }
+  .feed .ico { width: 32px; height: 32px; border-radius: 50%; display: grid; place-items: center; }
+  .feed .ico svg { width: 17px; height: 17px; }
+  .feed .ico.in { background: var(--ok-bg); color: var(--ok); }
+  .feed .ico.reg { background: var(--track); color: var(--cobalt); }
+  .feed .what { min-width: 0; }
+  .feed .what b { font-weight: 600; }
+  .feed .what span { display: block; color: var(--muted); font-size: .86rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .feed time { color: var(--muted); font-size: .84rem; white-space: nowrap; }
+  .feed li.fresh { animation: fresh 2.4s ease-out; }
+  @keyframes fresh { from { background: var(--track); } to { background: transparent; } }
+
+  .table-tools { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; margin-top: 14px; }
+  .search { flex: 1 1 260px; position: relative; }
+  .search input { width: 100%; font: inherit; color: var(--ink); background: var(--surface-2); border: 1.5px solid var(--line); border-radius: 10px; padding: .6rem .8rem .6rem 2.4rem; min-height: 42px; }
+  .search svg { position: absolute; left: .8rem; top: 50%; transform: translateY(-50%); width: 18px; height: 18px; color: var(--muted); }
+  .seg { display: inline-flex; border: 1.5px solid var(--line); border-radius: 10px; overflow: hidden; }
+  .seg button { font: 600 .88rem var(--body); color: var(--ink); background: transparent; border: 0; padding: .55rem .85rem; min-height: 40px; cursor: pointer; }
+  .seg button + button { border-left: 1.5px solid var(--line); }
+  .seg button[aria-pressed="true"] { background: var(--cobalt); color: var(--on-cobalt); }
+  .showing { color: var(--muted); font-size: .88rem; }
+  .table-box { overflow-x: auto; margin-top: 12px; border: 1px solid var(--grid); border-radius: 12px; }
+  table.people { border-collapse: collapse; width: 100%; min-width: 860px; font-size: .9rem; }
+  table.people th { text-align: left; font-weight: 600; color: var(--muted); background: var(--surface-2); padding: 10px 12px; white-space: nowrap; }
+  table.people td { padding: 10px 12px; border-top: 1px solid var(--grid); vertical-align: top; }
+  table.people td .small { display: block; color: var(--muted); font-size: .84rem; }
+  .badge { display: inline-flex; align-items: center; gap: .3rem; font-weight: 600; font-size: .84rem; padding: 3px 9px; border-radius: 999px; white-space: nowrap; }
+  .badge svg { width: 14px; height: 14px; }
+  .badge.in { background: var(--ok-bg); color: var(--ok); }
+  .badge.out { background: var(--surface-2); color: var(--muted); }
+  .more { margin-top: 12px; display: flex; justify-content: center; }
+  @media (prefers-reduced-motion: reduce) { * { transition: none !important; animation: none !important; } }
+</style>
+</head>
+<body>
+
+<!-- Sign in -->
+<main class="login" id="loginView" hidden>
+  <form id="loginForm">
+    <h1>Event dashboard</h1>
+    <p id="loginEvent">Sign in with the admin key to see registrations and check-ins.</p>
+    <label for="key">Admin key</label>
+    <input id="key" type="password" autocomplete="current-password" required>
+    <p class="err" id="loginErr" role="alert"></p>
+    <button class="btn btn-primary" type="submit">Sign in</button>
+    <footer class="powered">
+      <span>Powered by</span>
+      <picture><source srcset="/jupiter-logo-light.png" media="(prefers-color-scheme: dark)"><img src="/jupiter-logo.png" alt="Jupiter Systems, Inc." width="76" height="24"></picture>
+    </footer>
+  </form>
+</main>
+
+<!-- Dashboard -->
+<main class="wrap" id="dashView" hidden>
+  <header class="top">
+    <div>
+      <p class="kicker">Event dashboard</p>
+      <h1 id="evName">Event</h1>
+    </div>
+    <div class="actions">
+      <span class="live" id="live" role="status"><span class="dot" aria-hidden="true"></span><span><b id="liveText">Live</b> <span id="updated"></span></span></span>
+      <a class="btn btn-quiet" href="/api/admin/registrations.csv" download>
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11m0 0-4-4m4 4 4-4M5 20h14"/></svg>
+        Download attendee list
+      </a>
+      <button class="btn btn-quiet" id="signOut" type="button">Sign out</button>
+    </div>
+  </header>
+
+  <div class="grid">
+    <section class="card hero span-5" aria-labelledby="heroLabel">
+      <span class="label" id="heroLabel">Checked in</span>
+      <span class="big num" id="hIn">0</span>
+      <span class="of">of <b class="num" id="hReg">0</b> registered, <b class="num" id="hPct">0%</b> attendance</span>
+      <div class="meter" role="img" id="meter" aria-label="0% of registered attendees have checked in"><span id="meterFill" style="width:0%"></span></div>
+    </section>
+
+    <div class="tiles span-7">
+      <section class="tile"><span class="label">Registered</span><span class="value num" id="tReg">0</span><span class="note" id="tRegNote">&nbsp;</span></section>
+      <section class="tile"><span class="label">Not yet arrived</span><span class="value num" id="tOut">0</span><span class="note">Registered but not checked in</span></section>
+      <section class="tile"><span class="label">Companies</span><span class="value num" id="tCo">0</span><span class="note">Different companies registered</span></section>
+      <section class="tile" id="emailTile"><span class="label">Pass emails not delivered</span><span class="value num" id="tMail">0</span><span class="note" id="tMailNote">All passes were emailed</span></section>
+    </div>
+
+    <section class="card span-7" aria-labelledby="regTitle">
+      <h2 id="regTitle">Registrations per day</h2>
+      <p class="sub" id="regSub">New sign-ups each day</p>
+      <div class="chart" id="regChart"></div>
+      <details class="data"><summary>Show data</summary><table id="regTable"></table></details>
+    </section>
+
+    <section class="card span-5" aria-labelledby="feedTitle">
+      <h2 id="feedTitle">Latest activity</h2>
+      <p class="sub">Updates the moment someone registers or checks in</p>
+      <ul class="feed" id="feed" aria-live="polite"></ul>
+    </section>
+
+    <section class="card span-7" aria-labelledby="arrTitle">
+      <h2 id="arrTitle">Arrivals on event day</h2>
+      <p class="sub" id="arrSub">Check-ins every 15 minutes</p>
+      <div class="chart" id="arrChart"></div>
+      <details class="data" id="arrData"><summary>Show data</summary><table id="arrTable"></table></details>
+    </section>
+
+    <section class="card span-5" aria-labelledby="coTitle">
+      <h2 id="coTitle">Top companies</h2>
+      <p class="sub">By number of registrants</p>
+      <ul class="bars" id="companies"></ul>
+    </section>
+
+    <div class="an-bar">
+      <div><h2 id="anTitleHead">Analysis</h2><p>Charts you add here are saved for all admins and update live.</p></div>
+      <button class="btn btn-primary" id="anAdd" type="button" aria-expanded="false" aria-controls="anBuilder">
+        <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>Add a chart
+      </button>
+    </div>
+
+    <section class="card" id="anBuilder" hidden aria-label="New chart">
+      <div class="builder">
+        <form id="anForm">
+          <div><label for="anDim">Analyse</label><select id="anDim"></select></div>
+          <div><label for="anMetric">Measure</label><select id="anMetric"></select></div>
+          <div id="anFilterWrap"><label for="anFilter">Include</label><select id="anFilter"></select></div>
+          <div><span class="lbl" id="anTypeLbl">Show as</span><div class="types" id="anTypes" role="group" aria-labelledby="anTypeLbl"></div><p class="hint" id="anHint"></p></div>
+          <div><label for="anTitle">Title</label><input type="text" id="anTitle" maxlength="80"></div>
+          <p class="err" id="anErr" role="alert"></p>
+          <div class="row"><button class="btn btn-primary" type="submit">Add to dashboard</button><button class="btn btn-quiet" type="button" id="anCancel">Cancel</button></div>
+        </form>
+        <div class="preview-box"><span class="lbl">Preview</span><div class="chart" id="anPreview"></div></div>
+      </div>
+    </section>
+
+    <div class="span-12 grid" id="anGrid" style="grid-column: span 12"></div>
+    <p class="empty span-12" id="anEmpty" hidden>No charts yet. Use “Add a chart” to build one.</p>
+
+    <section class="card span-12" aria-labelledby="peopleTitle">
+      <h2 id="peopleTitle">Attendees</h2>
+      <div class="table-tools">
+        <div class="search">
+          <svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><circle cx="11" cy="11" r="7"/><path d="m20 20-3.5-3.5"/></svg>
+          <input id="q" type="search" placeholder="Search name, company, email or pass code" aria-label="Search attendees">
+        </div>
+        <div class="seg" role="group" aria-label="Filter by status">
+          <button type="button" data-f="all" aria-pressed="true">All</button>
+          <button type="button" data-f="in" aria-pressed="false">Checked in</button>
+          <button type="button" data-f="out" aria-pressed="false">Not arrived</button>
+        </div>
+        <span class="showing" id="showing" role="status"></span>
+      </div>
+      <div class="table-box">
+        <table class="people">
+          <thead><tr><th scope="col">Name</th><th scope="col">Company</th><th scope="col">Contact</th><th scope="col">Registered</th><th scope="col">Status</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+      <div class="more"><button class="btn btn-quiet" id="moreBtn" type="button" hidden>Show more</button></div>
+    </section>
+  </div>
+  <footer class="powered">
+    <span>Powered by</span>
+    <picture><source srcset="/jupiter-logo-light.png" media="(prefers-color-scheme: dark)"><img src="/jupiter-logo.png" alt="Jupiter Systems, Inc." width="76" height="24"></picture>
+  </footer>
+</main>
+
+<script src="/analysis.js"></script>
+<script>
+(() => {
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+  const nf = new Intl.NumberFormat('en-US');
+  const ICON = {
+    check: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12.5 4.5 4.5L19 7.5"/></svg>',
+    plus: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round"><path d="M12 5v14M5 12h14"/></svg>',
+    warn: '<svg aria-hidden="true" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4 2.5 20h19L12 4z"/><path d="M12 10v4.5M12 17.5v.01"/></svg>',
+  };
+
+  let tz = 'Asia/Manila';
+  let stats = null;
+  let people = [];
+  let filter = 'all';
+  let limit = 25;
+  let seenActivity = new Set();
+  let stream = null;
+
+  // ---------------- formatting (event time zone)
+  const fmt = (opts) => (iso) => new Intl.DateTimeFormat('en-US', { timeZone: tz, ...opts }).format(new Date(iso));
+  const timeOf = (iso) => fmt({ hour: 'numeric', minute: '2-digit' })(iso);
+  const dateTimeOf = (iso) => fmt({ month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' })(iso);
+  const dayLabel = (day, long) => new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', month: 'short', day: 'numeric', ...(long ? { weekday: 'short' } : {}) }).format(new Date(day + 'T00:00:00Z'));
+  const minutesLabel = (m) => { const h = Math.floor(m / 60), mm = m % 60; return `${((h + 11) % 12) + 1}:${String(mm).padStart(2, '0')} ${h < 12 ? 'AM' : 'PM'}`; };
+  function ago(iso) {
+    const s = Math.max(0, (Date.now() - new Date(iso)) / 1000);
+    if (s < 45) return 'just now';
+    if (s < 3600) return `${Math.round(s / 60)} min ago`;
+    if (s < 86400) return `${Math.round(s / 3600)} h ago`;
+    return dateTimeOf(iso);
+  }
+
+  // ---------------- sign in / out
+  async function api(path, opts) {
+    const r = await fetch(path, { credentials: 'same-origin', ...opts });
+    if (r.status === 401) { showLogin(); throw new Error('signed out'); }
+    if (!r.ok) { const b = await r.json().catch(() => ({})); throw new Error(b.message || `HTTP ${r.status}`); }
+    return r.json();
+  }
+  function showLogin() {
+    if (stream) { stream.close(); stream = null; }
+    $('dashView').hidden = true; $('loginView').hidden = false;
+    $('key').value = ''; $('key').focus();
+  }
+  $('loginForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    $('loginErr').textContent = '';
+    try {
+      const r = await fetch('/api/admin/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ key: $('key').value }) });
+      const body = await r.json().catch(() => ({}));
+      if (!r.ok) { $('loginErr').textContent = body.message || 'Sign-in failed. Try again.'; return; }
+      start();
+    } catch { $('loginErr').textContent = 'The server could not be reached. Check your connection.'; }
+  });
+  $('signOut').addEventListener('click', async () => {
+    await fetch('/api/admin/logout', { method: 'POST' }).catch(() => {});
+    showLogin();
+  });
+
+  // ---------------- live updates
+  let refreshTimer = null;
+  function scheduleRefresh() { clearTimeout(refreshTimer); refreshTimer = setTimeout(refresh, 400); }
+  function setLive(ok) {
+    $('live').classList.toggle('off', !ok);
+    $('liveText').textContent = ok ? 'Live' : 'Reconnecting…';
+  }
+  function connect() {
+    if (!window.EventSource) return;
+    stream = new EventSource('/api/admin/stream');
+    stream.addEventListener('open', () => { setLive(true); scheduleRefresh(); });
+    stream.addEventListener('change', scheduleRefresh);
+    stream.addEventListener('error', () => setLive(false));
+  }
+  async function refresh() {
+    try {
+      const [s, p] = await Promise.all([api('/api/admin/stats'), api('/api/admin/attendees')]);
+      stats = s; people = p; tz = s.timeZone || tz;
+      render();
+      if (window.Analysis) window.Analysis.update(people, tz);
+    } catch (e) { if (e.message !== 'signed out') setLive(false); }
+  }
+  async function start() {
+    $('loginView').hidden = true; $('dashView').hidden = false;
+    await refresh();
+    if (!stream) connect();
+  }
+  setInterval(() => { if (!$('dashView').hidden) refresh(); }, 60000);     // safety net if live updates drop
+  setInterval(() => { if (stats) renderFeed(false); }, 30000);             // keep "x min ago" current
+
+  // ---------------- render
+  function render() {
+    const t = stats.totals;
+    document.title = `Dashboard: ${stats.event.name}`;
+    $('evName').textContent = stats.event.name;
+    $('updated').textContent = `· updated ${timeOf(stats.updatedAt)}`;
+    const pct = t.registered ? Math.round((t.checkedIn / t.registered) * 100) : 0;
+    $('hIn').textContent = nf.format(t.checkedIn);
+    $('hReg').textContent = nf.format(t.registered);
+    $('hPct').textContent = `${pct}%`;
+    $('meterFill').style.width = `${pct}%`;
+    $('meter').setAttribute('aria-label', `${pct}% of registered attendees have checked in`);
+    $('tReg').textContent = nf.format(t.registered);
+    const todayCount = (stats.registrationsByDay.find((d) => d.day === stats.today) || {}).count || 0;
+    $('tRegNote').textContent = `${nf.format(todayCount)} today`;
+    $('tOut').textContent = nf.format(t.notArrived);
+    $('tCo').textContent = nf.format(t.companies);
+    $('tMail').textContent = nf.format(t.emailsPending);
+    $('emailTile').classList.toggle('warn', t.emailsPending > 0);
+    $('tMailNote').innerHTML = t.emailsPending > 0
+      ? `${ICON.warn}<span>Check email settings; these attendees can download their pass</span>`
+      : '<span>All passes were emailed</span>';
+
+    // Registrations per day
+    const reg = stats.registrationsByDay;
+    $('regSub').textContent = reg.length ? `New sign-ups each day, ${dayLabel(reg[0].day)} to ${dayLabel(reg[reg.length - 1].day)}` : 'New sign-ups each day';
+    columnChart($('regChart'), reg.map((d) => ({ label: dayLabel(d.day), long: dayLabel(d.day, true), value: d.count })),
+      { unit: ['registration', 'registrations'], empty: 'No registrations yet.' });
+    $('regTable').innerHTML = '<tr><th>Day</th><th>Registrations</th></tr>' + reg.map((d) => `<tr><td>${esc(dayLabel(d.day, true))}</td><td class="num">${d.count}</td></tr>`).join('');
+
+    // Arrivals
+    const arr = stats.arrivals;
+    if (arr) {
+      $('arrSub').textContent = `Check-ins every 15 minutes on ${dayLabel(arr.day, true)}, ${nf.format(arr.total)} in total`;
+      columnChart($('arrChart'), arr.slots.map((s) => ({ label: minutesLabel(s.minutes), long: `${minutesLabel(s.minutes)} – ${minutesLabel(s.minutes + 15)}`, value: s.count })),
+        { unit: ['check-in', 'check-ins'] });
+      $('arrTable').innerHTML = '<tr><th>Time</th><th>Check-ins</th></tr>' + arr.slots.map((s) => `<tr><td>${esc(minutesLabel(s.minutes))}</td><td class="num">${s.count}</td></tr>`).join('');
+      $('arrData').hidden = false;
+    } else {
+      $('arrSub').textContent = 'Check-ins every 15 minutes';
+      $('arrChart').innerHTML = '<p class="empty">No one has checked in yet. Arrivals appear here as passes are scanned.</p>';
+      $('arrData').hidden = true;
+    }
+
+    // Companies
+    const top = stats.topCompanies;
+    const max = Math.max(1, ...top.map((c) => c.registered));
+    $('companies').innerHTML = top.length ? top.map((c) => `
+      <li title="${esc(c.name)}: ${c.registered} registered, ${c.arrived} checked in">
+        <span class="name">${esc(c.name)}</span>
+        <span class="count num">${c.registered} registered · ${c.arrived} in</span>
+        <span class="track"><span class="fill" style="display:block;width:${(c.registered / max) * 100}%"></span></span>
+      </li>`).join('') : '<li class="empty" style="display:block">No registrations yet.</li>';
+
+    renderFeed(true);
+    renderPeople();
+  }
+
+  function renderFeed(markNew) {
+    const items = stats.activity;
+    const firstLoad = seenActivity.size === 0;
+    $('feed').innerHTML = items.length ? items.map((a) => {
+      const id = `${a.type}|${a.at}|${a.name}`;
+      const fresh = markNew && !firstLoad && !seenActivity.has(id);
+      return `<li class="${fresh ? 'fresh' : ''}">
+        <span class="ico ${a.type === 'checked_in' ? 'in' : 'reg'}">${a.type === 'checked_in' ? ICON.check : ICON.plus}</span>
+        <span class="what"><b>${esc(a.name)}</b> ${a.type === 'checked_in' ? 'checked in' : 'registered'}<span>${esc(a.company)}</span></span>
+        <time datetime="${esc(a.at)}" title="${esc(dateTimeOf(a.at))}">${esc(ago(a.at))}</time>
+      </li>`;
+    }).join('') : '<li style="display:block" class="empty">Nothing yet. New registrations and check-ins will appear here.</li>';
+    if (markNew) items.forEach((a) => seenActivity.add(`${a.type}|${a.at}|${a.name}`));
+  }
+
+  // ---------------- column chart (single series, inline SVG)
+  function niceMax(v) {
+    if (v <= 4) return 4;
+    const step = Math.pow(10, Math.floor(Math.log10(v)));
+    for (const m of [1, 2, 2.5, 5, 10]) if (m * step >= v) return m * step;
+    return 10 * step;
+  }
+  function columnChart(el, data, { unit, empty }) {
+    if (!data.length || data.every((d) => d.value === 0) && empty) { el.innerHTML = `<p class="empty">${esc(empty)}</p>`; return; }
+    const W = Math.max(280, el.clientWidth || 600), H = 240;
+    const m = { l: 36, r: 8, t: 20, b: 28 };
+    const pw = W - m.l - m.r, ph = H - m.t - m.b;
+    const top = niceMax(Math.max(...data.map((d) => d.value)));
+    const ticks = [0, top / 4, top / 2, (3 * top) / 4, top].filter((v) => Number.isInteger(v));
+    const band = pw / data.length;
+    const bw = Math.max(2, Math.min(24, band - 2));
+    const y = (v) => m.t + ph - (v / top) * ph;
+    const every = Math.max(1, Math.ceil(data.length / Math.max(1, Math.floor(pw / 64))));
+    const peakI = data.reduce((best, d, i) => (d.value > data[best].value ? i : best), 0);
+    let svg = `<svg viewBox="0 0 ${W} ${H}" height="${H}" role="img" aria-label="${esc(`${data.length} bars; highest ${data[peakI].value} at ${data[peakI].long}`)}">`;
+    for (const t of ticks) {
+      svg += `<line class="${t === 0 ? 'baseline' : 'gridline'}" x1="${m.l}" x2="${W - m.r}" y1="${y(t)}" y2="${y(t)}"/>`;
+      svg += `<text class="axis" x="${m.l - 8}" y="${y(t) + 4}" text-anchor="end">${nf.format(t)}</text>`;
+    }
+    data.forEach((d, i) => {
+      const cx = m.l + band * i + band / 2;
+      const x0 = cx - bw / 2, h = y(0) - y(d.value), r = Math.min(4, h, bw / 2);
+      svg += `<rect class="hit" data-i="${i}" x="${m.l + band * i}" y="${m.t}" width="${band}" height="${ph}"/>`;
+      if (d.value > 0) svg += `<path class="bar" data-b="${i}" d="M${x0},${y(0)} V${y(d.value) + r} Q${x0},${y(d.value)} ${x0 + r},${y(d.value)} H${x0 + bw - r} Q${x0 + bw},${y(d.value)} ${x0 + bw},${y(d.value) + r} V${y(0)} Z"/>`;
+      else svg += `<path class="bar" data-b="${i}" d=""/>`;
+      if (i === peakI && d.value > 0) svg += `<text class="peak" x="${cx}" y="${y(d.value) - 6}" text-anchor="middle">${nf.format(d.value)}</text>`;
+      if (i % every === 0) svg += `<text class="axis" x="${cx}" y="${H - 8}" text-anchor="middle">${esc(d.label)}</text>`;
+    });
+    svg += '</svg><div class="tip" hidden></div>';
+    el.innerHTML = svg;
+    const tip = el.querySelector('.tip');
+    const svgEl = el.querySelector('svg');
+    el.querySelectorAll('.hit').forEach((hit) => {
+      const i = Number(hit.dataset.i), d = data[i];
+      const bar = el.querySelector(`[data-b="${i}"]`);
+      hit.addEventListener('pointerenter', () => {
+        const scale = svgEl.getBoundingClientRect().width / W;
+        tip.innerHTML = `<b>${nf.format(d.value)}</b> ${esc(d.value === 1 ? unit[0] : unit[1])}<br>${esc(d.long)}`;
+        tip.style.left = `${(m.l + band * i + band / 2) * scale}px`;
+        tip.style.top = `${y(d.value) * scale}px`;
+        tip.hidden = false; bar.classList.add('on');
+      });
+      hit.addEventListener('pointerleave', () => { tip.hidden = true; bar.classList.remove('on'); });
+    });
+  }
+  let resizeT = null;
+  window.addEventListener('resize', () => { clearTimeout(resizeT); resizeT = setTimeout(() => { if (stats) { render(); if (window.Analysis) window.Analysis.rerender(); } }, 150); });
+  if (window.Analysis) window.Analysis.init({ api });
+
+  // ---------------- attendee table
+  function renderPeople() {
+    const term = $('q').value.trim().toLowerCase();
+    const list = people.filter((p) =>
+      (filter === 'all' || (filter === 'in' ? p.checkedInAt : !p.checkedInAt)) &&
+      (!term || `${p.firstName} ${p.lastName} ${p.company} ${p.email} ${p.passCode} ${p.designation}`.toLowerCase().includes(term)));
+    const shown = list.slice(0, limit);
+    $('rows').innerHTML = shown.length ? shown.map((p) => `<tr>
+      <td><b>${esc(p.firstName)} ${esc(p.lastName)}</b><span class="small">${esc(p.designation)}</span></td>
+      <td>${esc(p.company)}<span class="small num">Pass ${esc(p.passCode)}</span></td>
+      <td><span class="num">${esc(p.contact)}</span><span class="small">${esc(p.email)}</span></td>
+      <td class="num">${esc(dateTimeOf(p.registeredAt))}${p.emailSent ? '' : '<span class="small" style="color:var(--warn)">Pass email not sent</span>'}</td>
+      <td>${p.checkedInAt ? `<span class="badge in">${ICON.check}Checked in ${esc(timeOf(p.checkedInAt))}</span>` : '<span class="badge out">Not arrived</span>'}</td>
+    </tr>`).join('') : `<tr><td colspan="5" style="text-align:center;color:var(--muted);padding:28px">${people.length ? 'No attendees match this search.' : 'No registrations yet.'}</td></tr>`;
+    $('showing').textContent = `Showing ${nf.format(shown.length)} of ${nf.format(list.length)}`;
+    $('moreBtn').hidden = list.length <= limit;
+  }
+  $('q').addEventListener('input', () => { limit = 25; renderPeople(); });
+  document.querySelectorAll('.seg button').forEach((b) => b.addEventListener('click', () => {
+    filter = b.dataset.f; limit = 25;
+    document.querySelectorAll('.seg button').forEach((x) => x.setAttribute('aria-pressed', String(x === b)));
+    renderPeople();
+  }));
+  $('moreBtn').addEventListener('click', () => { limit += 50; renderPeople(); });
+
+  // ---------------- boot
+  fetch('/api/admin/session', { credentials: 'same-origin' }).then((r) => r.json()).then((s) => {
+    if (s.event && s.event.name) $('loginEvent').textContent = `${s.event.name}: sign in with the admin key to see registrations and check-ins.`;
+    if (s.signedIn) start(); else showLogin();
+  }).catch(() => showLogin());
+})();
+</script>
+</body>
+</html>
