@@ -30,34 +30,38 @@ const esc = (s) =>
 
 function buildHtml({ attendee, passCode, event }) {
   const first = attendee.first_name || attendee.full_name.split(' ')[0];
-  const font = "font-family:Arial,Helvetica,sans-serif;";
+  const font = "font-family:Roboto,Arial,Helvetica,sans-serif;";
   const row = (label, value) =>
-    `<tr><td style="${font}padding:6px 0;color:#5B6678;font-size:13px;width:110px;vertical-align:top">${label}</td>` +
-    `<td style="${font}padding:6px 0;color:#16223A;font-size:14px">${esc(value)}</td></tr>`;
+    `<tr><td style="${font}padding:6px 0;color:#5C5C5C;font-size:13px;width:110px;vertical-align:top">${label}</td>` +
+    `<td style="${font}padding:6px 0;color:#141414;font-size:14px">${esc(value)}</td></tr>`;
 
-  return `<!doctype html><html><body style="margin:0;background:#E9EDF1;padding:24px 12px">
+  return `<!doctype html><html><body style="margin:0;background:#F2F2F2;padding:24px 12px">
 <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="max-width:520px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden">
-  <tr><td style="${font}background:#2D5BE3;color:#ffffff;padding:24px 28px">
+  <tr><td style="${font}background:#141414;color:#ffffff;padding:24px 28px;border-top:5px solid #E00000">
     <div style="font-size:21px;font-weight:bold;line-height:1.25">${esc(event.name)}</div>
     ${event.date ? `<div style="font-size:14px;margin-top:6px;opacity:.9">${esc(event.date)}</div>` : ''}
     ${event.venue ? `<div style="font-size:14px;opacity:.9">${esc(event.venue)}</div>` : ''}
   </td></tr>
-  <tr><td style="${font}padding:28px;color:#16223A;font-size:15px;line-height:1.55">
+  <tr><td style="${font}padding:28px;color:#141414;font-size:15px;line-height:1.55">
     <p style="margin:0 0 12px">Hi ${esc(first)},</p>
     <p style="margin:0 0 20px">You're registered. The QR code below is your pass. Show it at the registration desk when you arrive, either on your phone or printed.</p>
     <div style="text-align:center;margin:0 0 8px">
-      <img src="cid:passqr" width="240" height="240" alt="Your QR pass" style="display:inline-block;border:1px solid #C9D1DB;border-radius:10px">
+      <img src="cid:passqr" width="240" height="240" alt="Your QR pass" style="display:inline-block;border:1px solid #D4D4D4;border-radius:10px">
     </div>
     <div style="text-align:center;font-family:'Courier New',monospace;font-size:20px;font-weight:bold;letter-spacing:3px;margin:0 0 24px">${esc(passCode)}</div>
-    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #E1E6EC;padding-top:8px">
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border-top:1px solid #E6E6E6;padding-top:8px">
       ${row('Name', attendee.full_name)}
       ${row('Designation', attendee.designation)}
       ${row('Company', attendee.company_name)}
     </table>
-    <p style="margin:24px 0 0;color:#5B6678;font-size:13px">This pass admits one person. Please don't post it publicly. If the code won't scan, staff can type in the pass code shown above.</p>
+    <p style="margin:24px 0 0;color:#5C5C5C;font-size:13px">This pass admits one person. Please don't post it publicly. If the code won't scan, staff can type in the pass code shown above.</p>
   </td></tr>
 </table>
-<p style="${font}text-align:center;color:#5B6678;font-size:12px;margin:16px 0 0">Sent by ${esc(event.organizer)} because you registered for ${esc(event.name)}.</p>
+<p style="${font}text-align:center;color:#5C5C5C;font-size:12px;margin:16px 0 0">Sent by ${esc(event.organizer)} because you registered for ${esc(event.name)}.</p>
+<table role="presentation" cellpadding="0" cellspacing="0" align="center" style="margin:12px auto 0"><tr>
+  <td style="${font}color:#8C8C8C;font-size:11px;padding-right:6px;vertical-align:middle">Powered by</td>
+  <td style="vertical-align:middle"><img src="cid:jupiterlogo" width="69" height="22" alt="Jupiter Systems, Inc." style="display:block;border:0"></td>
+</tr></table>
 </body></html>`;
 }
 
@@ -77,6 +81,8 @@ function buildText({ attendee, passCode, event }) {
     `Company: ${attendee.company_name}`,
     '',
     'This pass admits one person. Please don\'t post it publicly.',
+    '',
+    'Powered by Jupiter Systems, Inc.',
   ].filter((l) => l !== null).join('\n');
 }
 
@@ -90,6 +96,7 @@ async function sendPassEmail({ attendee, passCode, qrPng, event }) {
     html: buildHtml({ attendee, passCode, event }),
     attachments: [
       { filename: `pass-${passCode}.png`, content: qrPng, contentType: 'image/png', cid: 'passqr' },
+      { filename: 'jupiter-systems.png', path: path.join(__dirname, 'jupiter-logo-email.png'), contentType: 'image/png', cid: 'jupiterlogo' },
     ],
   });
 

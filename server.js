@@ -5,6 +5,7 @@ const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
 const express = require('express');
+const { EventEmitter } = require('events');
 const rateLimit = require('express-rate-limit');
 const Database = require('better-sqlite3');
 const QRCode = require('qrcode');
@@ -21,7 +22,8 @@ if (PASS_SECRET.length < 32 || PASS_SECRET.startsWith('replace-')) {
   process.exit(1);
 }
 if (!STAFF_PIN) console.warn('STAFF_PIN is not set: the /checkin page will reject every PIN.');
-if (!ADMIN_KEY) console.warn('ADMIN_KEY is not set: the CSV export is disabled.');
+if (!ADMIN_KEY) console.warn('ADMIN_KEY is not set: the admin dashboard and CSV export are disabled.');
+const EVENT_TZ = process.env.EVENT_TZ || 'Asia/Manila'; // time zone for dashboard days and times
 
 const EVENT = {
   name: process.env.EVENT_NAME || 'Our Event',
@@ -56,6 +58,27 @@ const cols = db.prepare('PRAGMA table_info(registrations)').all().map((c) => c.n
 if (!cols.includes('first_name')) db.exec('ALTER TABLE registrations ADD COLUMN first_name TEXT');
 if (!cols.includes('last_name')) db.exec('ALTER TABLE registrations ADD COLUMN last_name TEXT');
 
+// Charts added on the admin dashboard's Analysis section (shared by all admins).
+const chartsTableExisted = db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name='saved_charts'").get();
+db.exec(`
+  CREATE TABLE IF NOT EXISTS saved_charts (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    title       TEXT NOT NULL,
+    dimension   TEXT NOT NULL,
+    metric      TEXT NOT NULL,
+    chart_type  TEXT NOT NULL,
+    filter      TEXT NOT NULL DEFAULT 'all',
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+  );
+`);
+if (!chartsTableExisted) {
+  const seed = db.prepare('INSERT INTO saved_charts (title, dimension, metric, chart_type, filter) VALUES (?, ?, ?, ?, ?)');
+  seed.run('Registrants by designation', 'designation', 'count', 'bar', 'all');
+  seed.run('Share of registrants by company', 'company', 'count', 'pie', 'all');
+  seed.run('Attendance rate by company', 'company', 'rate', 'bar', 'all');
+  seed.run('Registrations by day of the week', 'regWeekday', 'count', 'column', 'all');
+}
+
 const q = {
   byEmail: db.prepare('SELECT * FROM registrations WHERE email = ?'),
   byCode: db.prepare('SELECT * FROM registrations WHERE pass_code = ?'),
@@ -67,6 +90,10 @@ const q = {
   all: db.prepare('SELECT * FROM registrations ORDER BY id'),
   counts: db.prepare('SELECT COUNT(*) AS total, COUNT(checked_in_at) AS checkedIn FROM registrations'),
 };
+
+// Live updates: registrations and check-ins are announced here for the admin dashboard.
+const bus = new EventEmitter();
+bus.setMaxListeners(0);
 
 // ---------------------------------------------------------------- passes
 // Pass code: 8 characters without look-alikes (no 0/O, 1/I). The QR holds "CODE.SIGNATURE",
@@ -99,7 +126,7 @@ function parseToken(raw) {
 const qrPng = (code) =>
   QRCode.toBuffer(tokenFor(code), {
     type: 'png', width: 520, margin: 2, errorCorrectionLevel: 'M',
-    color: { dark: '#16223A', light: '#FFFFFF' },
+    color: { dark: '#141414', light: '#FFFFFF' },
   });
 
 async function sendPass(row, png) {
@@ -201,6 +228,7 @@ app.post('/api/register', registerLimiter, async (req, res) => {
     }
   }
   if (!row) return res.status(500).json({ message: 'Registration could not be saved. Try again.' });
+  bus.emit('change', { type: 'registered' });
 
   const png = await qrPng(row.pass_code);
   let emailSent = false;
@@ -234,6 +262,7 @@ app.post('/api/checkin', pinFailLimiter, checkinLimiter, (req, res) => {
   if (!row) return res.json({ status: 'invalid', message: 'This is not a valid pass for this event.', counts: q.counts.get() });
 
   const firstTime = q.checkIn.run(row.pass_code).changes === 1;
+  if (firstTime) bus.emit('change', { type: 'checked_in' });
   const fresh = q.byCode.get(row.pass_code);
   res.json({
     status: firstTime ? 'checked_in' : 'already',
@@ -257,7 +286,7 @@ function splitName(r) {
 }
 
 app.get('/api/admin/registrations.csv', pinFailLimiter, (req, res) => {
-  if (!secretMatches(req.get('x-admin-key') || req.query.key, ADMIN_KEY)) return res.status(401).send('Unauthorized');
+  if (!isAdmin(req)) return res.status(401).send('Unauthorized');
 
   const cell = (value, guardFormula = true) => {
     let s = value == null ? '' : String(value);
@@ -281,6 +310,180 @@ app.get('/api/admin/registrations.csv', pinFailLimiter, (req, res) => {
   res.send('\uFEFF' + lines.join('\r\n')); // BOM so Excel reads ñ and other accents correctly
 });
 
+// ---- admin dashboard
+// Signing in with ADMIN_KEY sets a 12-hour session cookie. Changing ADMIN_KEY signs everyone out.
+const ADMIN_COOKIE = 'bic_admin';
+const SESSION_MS = 12 * 60 * 60 * 1000;
+const keyFingerprint = () => crypto.createHash('sha256').update(ADMIN_KEY).digest('hex');
+const sessionSig = (exp) => crypto.createHmac('sha256', PASS_SECRET).update(`admin:${exp}:${keyFingerprint()}`).digest('base64url');
+
+function readCookie(req, name) {
+  for (const part of String(req.get('cookie') || '').split(';')) {
+    const i = part.indexOf('=');
+    if (i > 0 && part.slice(0, i).trim() === name) return decodeURIComponent(part.slice(i + 1).trim());
+  }
+  return '';
+}
+
+function isAdmin(req) {
+  if (!ADMIN_KEY) return false;
+  const given = req.get('x-admin-key') || req.query.key;
+  if (given) return secretMatches(given, ADMIN_KEY);
+  const [exp, sig] = readCookie(req, ADMIN_COOKIE).split('.');
+  if (!exp || !sig || Number(exp) < Date.now()) return false;
+  return secretMatches(sig, sessionSig(exp));
+}
+
+const requireAdmin = (req, res, next) => (isAdmin(req) ? next() : res.status(401).json({ message: 'Sign in to view the dashboard.' }));
+
+function setSession(req, res, exp) {
+  const secure = req.secure ? '; Secure' : '';
+  const value = exp ? `${exp}.${sessionSig(exp)}` : '';
+  const age = exp ? Math.floor(SESSION_MS / 1000) : 0;
+  res.set('Set-Cookie', `${ADMIN_COOKIE}=${value}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${age}${secure}`);
+}
+
+app.post('/api/admin/login', pinFailLimiter, (req, res) => {
+  if (!secretMatches(req.body && req.body.key, ADMIN_KEY)) return res.status(401).json({ message: 'That admin key is incorrect.' });
+  setSession(req, res, Date.now() + SESSION_MS);
+  res.json({ ok: true });
+});
+app.post('/api/admin/logout', (req, res) => { setSession(req, res, 0); res.json({ ok: true }); });
+app.get('/api/admin/session', (req, res) => res.json({ signedIn: isAdmin(req), event: EVENT }));
+
+// Times in the database are UTC ("YYYY-MM-DD HH:MM:SS"); the dashboard shows them in EVENT_TZ.
+const utc = (t) => new Date(t.replace(' ', 'T') + 'Z');
+const dayFmt = new Intl.DateTimeFormat('en-CA', { timeZone: EVENT_TZ, year: 'numeric', month: '2-digit', day: '2-digit' });
+const hmFmt = new Intl.DateTimeFormat('en-GB', { timeZone: EVENT_TZ, hour: '2-digit', minute: '2-digit', hourCycle: 'h23' });
+const localDay = (t) => dayFmt.format(utc(t));                              // "2026-11-12"
+const localMinutes = (t) => { const [h, m] = hmFmt.format(utc(t)).split(':').map(Number); return h * 60 + m; };
+const addDays = (day, n) => { const d = new Date(day + 'T00:00:00Z'); d.setUTCDate(d.getUTCDate() + n); return d.toISOString().slice(0, 10); };
+
+function computeStats() {
+  const rows = q.all.all();
+  const total = rows.length;
+  const arrived = rows.filter((r) => r.checked_in_at);
+  const companies = new Map();
+  for (const r of rows) {
+    const key = r.company_name.trim().toLowerCase().replace(/[.,]/g, '').replace(/\s+/g, ' ');
+    const c = companies.get(key) || { name: r.company_name.trim(), registered: 0, arrived: 0 };
+    c.registered += 1;
+    if (r.checked_in_at) c.arrived += 1;
+    companies.set(key, c);
+  }
+
+  // Registrations per day, gaps filled with zero (at most the last 60 days).
+  const perDay = new Map();
+  for (const r of rows) perDay.set(localDay(r.created_at), (perDay.get(localDay(r.created_at)) || 0) + 1);
+  const registrationsByDay = [];
+  if (rows.length) {
+    const days = [...perDay.keys()].sort();
+    let d = days[0];
+    const last = days[days.length - 1];
+    while (d <= last) { registrationsByDay.push({ day: d, count: perDay.get(d) || 0 }); d = addDays(d, 1); }
+    registrationsByDay.splice(0, Math.max(0, registrationsByDay.length - 60));
+  }
+
+  // Arrivals in 15-minute slots on the most recent check-in day.
+  let arrivals = null;
+  if (arrived.length) {
+    const latest = arrived.reduce((a, b) => (a.checked_in_at > b.checked_in_at ? a : b));
+    const day = localDay(latest.checked_in_at);
+    const mins = arrived.filter((r) => localDay(r.checked_in_at) === day).map((r) => localMinutes(r.checked_in_at));
+    const start = Math.floor(Math.min(...mins) / 15) * 15;
+    const end = Math.floor(Math.max(...mins) / 15) * 15;
+    const slots = [];
+    for (let m = start; m <= end; m += 15) slots.push({ minutes: m, count: 0 });
+    for (const m of mins) slots[(Math.floor(m / 15) * 15 - start) / 15].count += 1;
+    arrivals = { day, total: mins.length, slots };
+  }
+
+  const activity = [
+    ...rows.map((r) => ({ type: 'registered', at: r.created_at, name: r.full_name, company: r.company_name })),
+    ...arrived.map((r) => ({ type: 'checked_in', at: r.checked_in_at, name: r.full_name, company: r.company_name })),
+  ].sort((a, b) => (a.at < b.at ? 1 : -1)).slice(0, 6).map((a) => ({ ...a, at: sqlTimeToIso(a.at) }));
+
+  return {
+    event: EVENT,
+    timeZone: EVENT_TZ,
+    today: dayFmt.format(new Date()),
+    totals: {
+      registered: total,
+      checkedIn: arrived.length,
+      notArrived: total - arrived.length,
+      companies: companies.size,
+      emailsPending: rows.filter((r) => !r.email_sent_at).length,
+    },
+    registrationsByDay,
+    arrivals,
+    topCompanies: [...companies.values()].sort((a, b) => b.registered - a.registered || a.name.localeCompare(b.name)).slice(0, 8),
+    activity,
+    updatedAt: new Date().toISOString(),
+  };
+}
+
+app.get('/api/admin/stats', requireAdmin, (req, res) => res.json(computeStats()));
+
+app.get('/api/admin/attendees', requireAdmin, (req, res) => {
+  res.json(q.all.all().reverse().map((r) => {
+    const [firstName, lastName] = splitName(r);
+    return {
+      passCode: pretty(r.pass_code), firstName, lastName, designation: r.designation, company: r.company_name,
+      contact: r.contact_number, email: r.email, registeredAt: sqlTimeToIso(r.created_at),
+      emailSent: Boolean(r.email_sent_at), checkedInAt: sqlTimeToIso(r.checked_in_at),
+    };
+  }));
+});
+
+// ---- saved charts
+const CHART_OPTIONS = {
+  dimension: ['company', 'designation', 'emailDomain', 'status', 'regDay', 'regWeekday', 'regHour', 'arrival15', 'arrivalHour'],
+  metric: ['count', 'checkedIn', 'rate', 'stacked'],
+  chart_type: ['bar', 'column', 'line', 'pie'],
+  filter: ['all', 'in', 'out'],
+};
+const chartQ = {
+  list: db.prepare('SELECT id, title, dimension, metric, chart_type AS chartType, filter FROM saved_charts ORDER BY id'),
+  count: db.prepare('SELECT COUNT(*) AS n FROM saved_charts'),
+  insert: db.prepare('INSERT INTO saved_charts (title, dimension, metric, chart_type, filter) VALUES (@title, @dimension, @metric, @chart_type, @filter)'),
+  remove: db.prepare('DELETE FROM saved_charts WHERE id = ?'),
+};
+
+app.get('/api/admin/charts', requireAdmin, (req, res) => res.json(chartQ.list.all()));
+
+app.post('/api/admin/charts', requireAdmin, (req, res) => {
+  const b = req.body || {};
+  const c = {
+    title: String(b.title || '').replace(/\s+/g, ' ').trim().slice(0, 80),
+    dimension: b.dimension, metric: b.metric, chart_type: b.chartType, filter: b.filter || 'all',
+  };
+  for (const [k, allowed] of Object.entries(CHART_OPTIONS)) {
+    if (!allowed.includes(c[k])) return res.status(422).json({ message: `Choose a valid ${k.replace('_', ' ')}.` });
+  }
+  if (!c.title) return res.status(422).json({ message: 'Give the chart a title.' });
+  if (chartQ.count.get().n >= 30) return res.status(422).json({ message: 'The dashboard holds up to 30 charts. Remove one first.' });
+  const id = chartQ.insert.run(c).lastInsertRowid;
+  bus.emit('change', { type: 'charts' });
+  res.status(201).json({ id });
+});
+
+app.delete('/api/admin/charts/:id', requireAdmin, (req, res) => {
+  chartQ.remove.run(Number(req.params.id));
+  bus.emit('change', { type: 'charts' });
+  res.json({ ok: true });
+});
+
+// Server-sent events: the dashboard reloads its numbers whenever someone registers or checks in.
+app.get('/api/admin/stream', requireAdmin, (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write('retry: 5000\n\n');
+  const onChange = (e) => res.write(`event: change\ndata: ${JSON.stringify(e)}\n\n`);
+  const ping = setInterval(() => res.write(': ping\n\n'), 25000);
+  bus.on('change', onChange);
+  req.on('close', () => { clearInterval(ping); bus.off('change', onChange); });
+});
+
 app.use('/api', (req, res) => res.status(404).json({ message: 'Not found.' }));
 app.use((err, req, res, next) => {
   console.error(err);
@@ -291,4 +494,5 @@ app.use((err, req, res, next) => {
 app.listen(PORT, () => {
   console.log(`Registration page: http://localhost:${PORT}/`);
   console.log(`Staff check-in:    http://localhost:${PORT}/checkin`);
+  console.log(`Admin dashboard:   http://localhost:${PORT}/admin`);
 });
